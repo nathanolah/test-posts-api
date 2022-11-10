@@ -14,7 +14,6 @@ class Post extends Model<InferAttributes<Post>, InferCreationAttributes<Post>> {
   declare reads: CreationOptional<number>;
   declare popularity: CreationOptional<number>;
   declare tags: CreationOptional<string>;
-  declare authorIds: CreationOptional<number>;
 
   public static async getPostsByUserId(userId: number) {
     return Post.findAll({
@@ -65,10 +64,6 @@ class Post extends Model<InferAttributes<Post>, InferCreationAttributes<Post>> {
           // note: comma separated string since sqlite does not support arrays
           type: Sequelize.STRING,
           allowNull: false,
-        },
-        authorIds: {
-          type: Sequelize.STRING,
-          allowNull: true,
         },
       },
       {

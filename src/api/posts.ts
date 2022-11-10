@@ -9,7 +9,6 @@ import { sortPosts } from "../utils/sortPosts";
 import { removeDuplicates } from "../utils/removeDuplicates";
 import jwt from "jsonwebtoken";
 import { SESSION_SECRET } from "../../env";
-import { makeToken } from "../../tests/utils";
 
 const router = express.Router();
 
@@ -37,12 +36,6 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       // use regex to split the tag and authorId's string into an array of strings
       for (let i = 0; i < result.length; i++) {
         result[i].tags = result[i].tags.match(regex);
-        if (result[i].authorIds !== null) {
-          result[i].authorIds = result[i].authorIds.match(regex);
-          result[i].authorIds = result[i].authorIds.map(Number); // convert from strings to number
-        } else {
-          delete result[i].dataValues.authorIds; // remove the object's key value pair
-        }
       }
 
       // sort posts
@@ -77,11 +70,10 @@ router.patch(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const regex = /[^,\s][^\,]*[^,\s]*/g;
-      const { authorIds, tags, text } = req.body;
+      const { tags, text } = req.body;
 
       // authenticate the access token to verify the author
-      //const token = req.headers["x-access-token"];
-      const token = makeToken(2);
+      const token = req.headers["x-access-token"];
 
       if (token && typeof token === "string") {
         // authenticate author
@@ -102,10 +94,45 @@ router.patch(
           if (userPost === null) {
             res.status(404).json({ error: "UserPost not found" });
           } else {
+            let authorIds: any = [];
+
+            // Find all the current authors of the post at postId
+            const currentAuthIds = await UserPostModel.findAll({
+              where: { postId: req.params.id },
+            });
+
+            // Update authorIds property
+            if (req.body.authorIds !== undefined) {
+              // Update the UserPost with the new authorIds that are equal to the postId
+              authorIds = req.body.authorIds;
+
+              // delete all the authors of the current post at postId
+              for (let i = 0; i < currentAuthIds.length; i++) {
+                // delete all the authIds
+                await UserPostModel.destroy({
+                  where: {
+                    postId: req.params.id,
+                    userId: currentAuthIds[i].userId,
+                  },
+                });
+              }
+
+              // create the new authorIds for the post at postId
+              for (let i = 0; i < authorIds.length; i++) {
+                await UserPostModel.create({
+                  postId: req.params.id as any,
+                  userId: authorIds[i],
+                });
+              }
+            } else {
+              for (let i = 0; i < currentAuthIds.length; i++) {
+                authorIds.push(currentAuthIds[i].userId);
+              }
+            }
+
             // update the post
-            const updatedPost = await PostModel.update(
+            await PostModel.update(
               {
-                authorIds: authorIds?.join(","),
                 tags: tags?.join(","),
                 text: text,
               },
@@ -115,22 +142,23 @@ router.patch(
             );
 
             // return updated post
-            let result: any;
-            result = await PostModel.findOne({
+            let post: any;
+            post = await PostModel.findOne({
               where: { id: userPost?.postId },
             });
 
-            if (result === null) {
+            if (post === null) {
               res.status(404).json({ error: "Post not found" });
             } else {
-              // convert string into an array for tags and authorIds
-              result.tags = result?.tags.match(regex);
-              if (result?.authorIds !== null) {
-                result.authorIds = result?.authorIds.match(regex);
-                result.authorIds = result?.authorIds.map(Number);
-              } else {
-                delete result.dataValues.authorIds;
-              }
+              const result = {
+                id: post.id,
+                text: post.text,
+                likes: post.likes,
+                reads: post.reads,
+                popularity: post.popularity,
+                tags: post?.tags.match(regex),
+                authorIds: authorIds,
+              };
 
               const payload = {
                 post: result,
